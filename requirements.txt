@@ -1,0 +1,10 @@
+psutil
+flask
+scapy
+pydivert
+mysql-connector-python
+scikit-learn
+pandas
+joblib
+numpy
+pywin32
