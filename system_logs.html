@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}System Logs{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div class="tb-left"><h2>System Logs</h2><p>Complete log from intrusion_log.csv — all USB events and session records</p></div>
+  <div class="tb-right">
+    <a href="{{ url_for('api_logs') }}" target="_blank">
+      <button class="btn btn-p">Export All JSON</button>
+    </a>
+  </div>
+</div>
+
+<div class="content">
+  <div class="sgrid sg4">
+    <div class="scard bl"><span class="sicon">&#8801;</span>
+      <div class="slabel">Total Events</div><div class="sval bl">{{ stats.total }}</div>
+      <div class="ssub">All modules combined</div></div>
+    <div class="scard re">
+      <div class="slabel">Blocked</div><div class="sval re">{{ stats.blocked }}</div>
+      <div class="ssub">Requires attention</div></div>
+    <div class="scard gr">
+      <div class="slabel">Active Sessions</div><div class="sval gr">{{ stats.active }}</div>
+      <div class="ssub">Monitor started</div></div>
+    <div class="scard or">
+      <div class="slabel">Stopped Sessions</div><div class="sval or">{{ stats.stopped }}</div>
+      <div class="ssub">Monitor stopped</div></div>
+  </div>
+
+  <!-- JSON data for chart — script tag approach, no | e filter -->
+  <script id="log-data" type="application/json">
+  {
+    "labels": {{ per_day.labels | tojson }},
+    "usb":    {{ per_day.usb    | tojson }},
+    "system": {{ per_day.system | tojson }}
+  }
+  </script>
+
+  <div class="gc">
+    <div class="gc-head"><span class="gc-title">Total Events per Day — All CSV Records</span><span class="chip on">CSV Data</span></div>
+    <div class="gc-body"><div class="cw"><canvas id="l_bar"></canvas></div></div>
+  </div>
+
+  <div class="gc">
+    <div class="gc-head">
+      <span class="gc-title">Complete System Log — intrusion_log.csv</span>
+      <span class="chip">{{ all_logs|length }} entries</span>
+    </div>
+    <div class="gc-body np">
+      <table class="dt">
+        <thead><tr><th>#</th><th>Timestamp</th><th>Module</th><th>Event Type</th><th>Drive</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody>
+          {% for row in all_logs %}
+          <tr>
+            <td style="color:var(--dim);font-size:10px">{{ loop.index }}</td>
+            <td style="color:var(--dim);font-size:11px;white-space:nowrap">{{ row.Timestamp }}</td>
+            <td>{% if row.Drive == 'SYSTEM' %}<span class="b b-d">SYS</span>{% else %}<span class="b b-b">USB</span>{% endif %}</td>
+            <td><span class="b b-b">{{ row['Event Type'] }}</span></td>
+            <td style="font-family:monospace;font-size:11px">{{ row.Drive }}</td>
+            <td>
+              {% set s = row.Status %}
+              {% if s == 'ACTIVE' %}<span class="b b-g">ACTIVE</span>
+              {% elif s == 'BLOCKED' %}<span class="b b-r">BLOCKED</span>
+              {% elif s == 'STOPPED' %}<span class="b b-d">STOPPED</span>
+              {% elif s == 'SAFE' %}<span class="b b-g">SAFE</span>
+              {% elif s == 'DETECTED' %}<span class="b b-b">DETECTED</span>
+              {% elif s == 'MALICIOUS' %}<span class="b b-r">MALICIOUS</span>
+              {% else %}<span class="b b-o">{{ s }}</span>{% endif %}
+            </td>
+            <td style="font-size:11.5px">{{ row.Details }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" style="color:var(--dim);text-align:center;padding:24px">No log entries found</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  var raw    = JSON.parse(document.getElementById('log-data').textContent);
+  var labels = raw.labels;
+  var usb    = raw.usb;
+  var sys    = raw.system;
+
+  new Chart(document.getElementById('l_bar'), {
+    type: 'bar',
+    data: { labels: labels, datasets: [
+      { label:'USB Events',    data:usb, backgroundColor:BL+'77', borderColor:BL, borderWidth:1, borderRadius:4 },
+      { label:'System Events', data:sys, backgroundColor:GR+'77', borderColor:GR, borderWidth:1, borderRadius:4 }
+    ]},
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:legOpts}, scales:scaleOpts }
+  });
+})();
+</script>
+{% endblock %}

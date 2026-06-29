@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+
+<!-- ── TOAST ALERT CARD ─────────────────────────────────────── -->
+<style>
+#toast {
+  display: none;
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-12px);
+  z-index: 9999;
+  min-width: 420px;
+  max-width: 560px;
+  border-radius: 12px;
+  border: 1px solid;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  backdrop-filter: blur(16px);
+  opacity: 0;
+  transition: opacity .25s ease, transform .25s ease;
+}
+#toast.toast-show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+#toast .t-bar {
+  height: 4px;
+  width: 100%;
+}
+#toast .t-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+}
+#toast .t-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+#toast .t-text { flex: 1; }
+#toast .t-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+  opacity: .75;
+}
+#toast .t-msg {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+#toast .t-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  opacity: .5;
+  padding: 0 0 0 4px;
+  color: inherit;
+  line-height: 1;
+  align-self: flex-start;
+  margin-top: 1px;
+}
+#toast .t-close:hover { opacity: 1; }
+@keyframes toast-drain {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+</style>
+
+<div id="toast">
+  <div class="t-bar" id="toast-bar"></div>
+  <div class="t-body">
+    <div class="t-icon" id="toast-icon"></div>
+    <div class="t-text">
+      <div class="t-title" id="toast-title"></div>
+      <div class="t-msg"   id="toast-msg"></div>
+    </div>
+    <button class="t-close" onclick="closeToast()">✕</button>
+  </div>
+</div>
+
+<div class="topbar">
+  <div class="tb-left"><h2>Overall Security Dashboard</h2><p>Unified view — USB activity, network threats and connected devices</p></div>
+  <div class="tb-right">
+    <div class="chip on">● Protection Active</div>
+    <button class="btn btn-r" onclick="stopMonitor()">&#9632; Stop Monitor</button>
+    <button class="btn btn-p" onclick="startMonitor()">&#9654; Start Monitor</button>
+  </div>
+</div>
+
+<div class="content">
+  <div class="sgrid sg4">
+    <div class="scard bl"><span class="sicon">&#11041;</span>
+      <div class="slabel">Total Events</div><div class="sval bl" id="stat-total">{{ stats.total }}</div>
+      <div class="ssub">All CSV log entries</div></div>
+    <div class="scard re"><span class="sicon">&#8855;</span>
+      <div class="slabel">Blocked Events</div><div class="sval re" id="stat-blocked">{{ stats.blocked }}</div>
+      <div class="ssub">Unauthorized attempts</div></div>
+    <div class="scard gr"><span class="sicon">&#9654;</span>
+      <div class="slabel">Active Sessions</div><div class="sval gr" id="stat-active">{{ stats.active }}</div>
+      <div class="ssub">Monitor started records</div></div>
+    <div class="scard or"><span class="sicon">&#9632;</span>
+      <div class="slabel">Stopped Sessions</div><div class="sval or" id="stat-stopped">{{ stats.stopped }}</div>
+      <div class="ssub">Monitor stopped records</div></div>
+  </div>
+
+  <script id="dash-data" type="application/json">
+  {
+    "labels":    {{ chart7.labels   | tojson }},
+    "allowed":   {{ chart7.allowed  | tojson }},
+    "blocked":   {{ chart7.blocked  | tojson }},
+    "breakdown": {{ breakdown       | tojson }},
+    "total":     {{ stats.total }},
+    "blocked_count": {{ stats.blocked }},
+    "active":    {{ stats.active }},
+    "stopped":   {{ stats.stopped }}
+  }
+  </script>
+
+  <div class="g21">
+    <div class="gc">
+      <div class="gc-head"><span class="gc-title">USB Activity — All CSV Records</span><span class="chip on">Live CSV</span></div>
+      <div class="gc-body"><div class="cw"><canvas id="d_usb"></canvas></div></div>
+    </div>
+    <div class="gc">
+      <div class="gc-head"><span class="gc-title">Event Status Breakdown</span></div>
+      <div class="gc-body"><div class="cws"><canvas id="d_donut"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="g2">
+    <div class="gc">
+      <div class="gc-head"><span class="gc-title">Network Traffic — Last 12 Hours</span><span class="chip">Simulated</span></div>
+      <div class="gc-body"><div class="cw"><canvas id="d_net"></canvas></div></div>
+    </div>
+    <div class="gc">
+      <div class="gc-head"><span class="gc-title">Threat Breakdown by Type</span></div>
+      <div class="gc-body"><div class="cw"><canvas id="d_threat"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="gc">
+    <div class="gc-head">
+      <span class="gc-title">Recent Events — intrusion_log.csv</span>
+      <span class="b b-b" id="recent-count">Last {{ recent|length }} entries</span>
+    </div>
+    <div class="gc-body np">
+      <table class="dt">
+        <thead><tr><th>Timestamp</th><th>Event Type</th><th>Drive</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody id="recent-tbody">
+          {% for row in recent %}
+          <tr>
+            <td style="color:var(--dim);font-size:11px;white-space:nowrap">{{ row.Timestamp }}</td>
+            <td><span class="b b-b">{{ row['Event Type'] }}</span></td>
+            <td style="font-family:monospace;font-size:11px">{{ row.Drive }}</td>
+            <td>
+              {% set s = row.Status %}
+              {% if s=='ACTIVE' %}<span class="b b-g">ACTIVE</span>
+              {% elif s=='BLOCKED' %}<span class="b b-r">BLOCKED</span>
+              {% elif s=='STOPPED' %}<span class="b b-d">STOPPED</span>
+              {% elif s=='SAFE' %}<span class="b b-g">SAFE</span>
+              {% elif s=='DETECTED' %}<span class="b b-b">DETECTED</span>
+              {% elif s=='MALICIOUS' %}<span class="b b-r">MALICIOUS</span>
+              {% else %}<span class="b b-o">{{ s }}</span>{% endif %}
+            </td>
+            <td style="font-size:11.5px">{{ row.Details }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" style="color:var(--dim);text-align:center;padding:24px">No data in intrusion_log.csv</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var _dash           = JSON.parse(document.getElementById('dash-data').textContent);
+var _lastLogCount   = _dash.total;
+var _lastNetCount   = 0;
+var _lastBlockedNet = 0;
+
+(function(){
+  new Chart(document.getElementById('d_usb'), {
+    type: 'bar',
+    data: { labels: _dash.labels, datasets: [
+      { label:'Active',  data:_dash.allowed, backgroundColor:GR+'77', borderColor:GR, borderWidth:1, borderRadius:4 },
+      { label:'Blocked', data:_dash.blocked, backgroundColor:RE+'77', borderColor:RE, borderWidth:1, borderRadius:4 }
+    ]},
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:legOpts}, scales:scaleOpts }
+  });
+
+  var colMap = { ACTIVE:GR+'cc', STOPPED:OR+'cc', BLOCKED:RE+'cc', SAFE:GR+'88', DETECTED:BL+'cc', MALICIOUS:RE+'88', UNKNOWN:PU+'cc' };
+  var bL = Object.keys(_dash.breakdown);
+  var bD = Object.values(_dash.breakdown);
+  new Chart(document.getElementById('d_donut'), {
+    type: 'doughnut',
+    data: { labels:bL, datasets:[{ data:bD, backgroundColor:bL.map(function(l){ return colMap[l]||PU+'cc'; }), borderWidth:0, hoverOffset:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{ legend:{ position:'bottom', labels:{boxWidth:9,padding:12,color:'#94a3b8'} } } }
+  });
+
+  var nc = document.getElementById('d_net').getContext('2d');
+  new Chart(nc, { type:'line', data:{ labels:['00','01','02','03','04','05','06','07','08','09','10','11'], datasets:[
+    { label:'Inbound KB/s', data:[120,80,40,60,200,350,420,380,290,310,260,150], borderColor:BL, borderWidth:2, fill:true, backgroundColor:grad(nc,BL), tension:.4, pointRadius:2 },
+    { label:'Blocked',      data:[0,0,0,2,5,8,3,4,2,1,0,0],                     borderColor:RE, borderWidth:2, fill:false, tension:.4, pointRadius:3 }
+  ]}, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:legOpts}, scales:scaleOpts } });
+
+  new Chart(document.getElementById('d_threat'), { type:'bar', data:{
+    labels:['Unauth USB','Malware','Port Scan','SYN Flood','C2 Callback','Brute Force'],
+    datasets:[{ data:[7,3,4,2,3,8], backgroundColor:[RE+'99',OR+'99',PU+'99',BL+'99',PK+'99',GR+'99'], borderRadius:5, borderWidth:0 }]
+  }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:scaleOpts } });
+})();
+
+// ── Toast ─────────────────────────────────────────────────────
+var _toastTimer = null;
+
+var _toastTypes = {
+  safe:    { bg:'rgba(52,211,153,.12)',  border:'rgba(52,211,153,.45)',  bar:'#34d399', iconBg:'rgba(52,211,153,.2)',  icon:'✔', title:'Safe',           color:'#34d399' },
+  warning: { bg:'rgba(248,113,113,.12)', border:'rgba(248,113,113,.45)', bar:'#f87171', iconBg:'rgba(248,113,113,.2)', icon:'✕', title:'Threat Detected', color:'#f87171' },
+  block:   { bg:'rgba(248,113,113,.12)', border:'rgba(248,113,113,.45)', bar:'#f87171', iconBg:'rgba(248,113,113,.2)', icon:'⊘', title:'Drive Blocked',   color:'#f87171' },
+  info:    { bg:'rgba(79,195,247,.12)',  border:'rgba(79,195,247,.45)',  bar:'#4fc3f7', iconBg:'rgba(79,195,247,.2)',  icon:'i', title:'Info',            color:'#4fc3f7' },
+  network: { bg:'rgba(248,113,113,.12)', border:'rgba(248,113,113,.45)', bar:'#f87171', iconBg:'rgba(248,113,113,.2)', icon:'⊘', title:'Attack Blocked',  color:'#f87171' }
+};
+
+function closeToast() {
+  var t = document.getElementById('toast');
+  t.classList.remove('toast-show');
+  clearTimeout(_toastTimer);
+  setTimeout(function(){ t.style.display='none'; }, 260);
+}
+
+function showToast(msg, type) {
+  var cfg = _toastTypes[type] || _toastTypes.info;
+  var t   = document.getElementById('toast');
+  var bar = document.getElementById('toast-bar');
+
+  t.style.background  = cfg.bg;
+  t.style.borderColor = cfg.border;
+  t.style.color       = cfg.color;
+
+  bar.style.background = cfg.bar;
+  bar.style.animation = 'none';
+  bar.offsetHeight;
+  bar.style.animation = 'toast-drain 4s linear forwards';
+
+  document.getElementById('toast-icon').textContent      = cfg.icon;
+  document.getElementById('toast-icon').style.background = cfg.iconBg;
+  document.getElementById('toast-icon').style.color      = cfg.color;
+  document.getElementById('toast-title').textContent     = cfg.title;
+  document.getElementById('toast-msg').textContent       = msg;
+
+  t.style.display = 'block';
+  t.offsetHeight;
+  t.classList.add('toast-show');
+
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(closeToast, 4000);
+}
+
+// ── Badge helper ──────────────────────────────────────────────
+var _badgeMap = { ACTIVE:'<span class="b b-g">ACTIVE</span>', BLOCKED:'<span class="b b-r">BLOCKED</span>',
+  STOPPED:'<span class="b b-d">STOPPED</span>', SAFE:'<span class="b b-g">SAFE</span>',
+  DETECTED:'<span class="b b-b">DETECTED</span>', MALICIOUS:'<span class="b b-r">MALICIOUS</span>' };
+function badge(s){ return _badgeMap[s] || '<span class="b b-o">'+s+'</span>'; }
+
+// ── Poll USB logs ─────────────────────────────────────────────
+function pollUSBLogs() {
+  fetch('/api/logs')
+    .then(function(r){ return r.json(); })
+    .then(function(logs){
+      if (logs.length === _lastLogCount) return;
+      var newEntries = logs.slice(0, logs.length - _lastLogCount);
+      _lastLogCount = logs.length;
+      newEntries.forEach(function(row){
+        var s = (row.Status||'').toUpperCase();
+        var d = row.Drive || '';
+        if (s==='BLOCKED')        showToast('Drive '+d+' has been blocked by IDS engine.','block');
+        else if (s==='MALICIOUS') showToast('Malicious file detected on '+d+'. Drive will be blocked.','warning');
+        else if (s==='SAFE')      showToast('USB drive appears safe to use ('+d+')','safe');
+        else if (s==='DETECTED')  showToast('USB drive detected: '+d+' — scanning...','info');
+        else if (s==='ACTIVE')    showToast('USB monitoring started','info');
+      });
+      document.getElementById('stat-total').textContent   = logs.length;
+      document.getElementById('stat-blocked').textContent = logs.filter(function(r){ return (r.Status||'').toUpperCase()==='BLOCKED'; }).length;
+      document.getElementById('stat-active').textContent  = logs.filter(function(r){ return (r.Status||'').toUpperCase()==='ACTIVE';  }).length;
+      document.getElementById('stat-stopped').textContent = logs.filter(function(r){ return (r.Status||'').toUpperCase()==='STOPPED'; }).length;
+      var tbody = document.getElementById('recent-tbody');
+      tbody.innerHTML = '';
+      logs.slice(0,10).forEach(function(row){
+        var s = (row.Status||'').toUpperCase();
+        tbody.innerHTML += '<tr>'
+          +'<td style="color:var(--dim);font-size:11px;white-space:nowrap">'+(row.Timestamp||'')+'</td>'
+          +'<td><span class="b b-b">'+(row['Event Type']||'')+'</span></td>'
+          +'<td style="font-family:monospace;font-size:11px">'+(row.Drive||'')+'</td>'
+          +'<td>'+badge(s)+'</td>'
+          +'<td style="font-size:11.5px">'+(row.Details||'')+'</td></tr>';
+      });
+      document.getElementById('recent-count').textContent = 'Last '+Math.min(10,logs.length)+' entries';
+    }).catch(function(){});
+}
+
+// ── Poll Network ──────────────────────────────────────────────
+function pollNetworkLogs() {
+  fetch('/api/network/logs')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var logs = data.logs || [];
+      if (logs.length > _lastNetCount) {
+        logs.slice(0, logs.length - _lastNetCount).forEach(function(log){
+          showToast('Network Attack Blocked! IP: '+log.attacker+' — '+log.type,'network');
+        });
+        _lastNetCount = logs.length;
+      }
+    }).catch(function(){});
+
+  fetch('/api/network/blocked')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var bl = (data.blocked_ips||[]).length;
+      if (bl > _lastBlockedNet) {
+        (data.blocked_ips||[]).slice(0, bl - _lastBlockedNet).forEach(function(b){
+          showToast('Network Attack Blocked! IP: '+b.ip+' — Firewall rule applied','network');
+        });
+        _lastBlockedNet = bl;
+      }
+    }).catch(function(){});
+}
+
+// ── Start / Stop ──────────────────────────────────────────────
+function startMonitor() {
+  fetch('/api/start_monitor',{method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){ showToast(d.message,'info'); });
+}
+function stopMonitor() {
+  fetch('/api/stop_monitor',{method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){ showToast(d.message,'info'); });
+}
+
+setInterval(pollUSBLogs,    3000);
+setInterval(pollNetworkLogs, 5000);
+</script>
+{% endblock %}

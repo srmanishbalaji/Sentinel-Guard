@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block title %}Network Monitor{% endblock %}
+
+{% block content %}
+
+<!-- ── TOAST ALERT CARD ─────────────────────────────────────── -->
+<style>
+#toast {
+  display: none;
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-12px);
+  z-index: 9999;
+  min-width: 420px;
+  max-width: 560px;
+  border-radius: 12px;
+  border: 1px solid;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  backdrop-filter: blur(16px);
+  opacity: 0;
+  transition: opacity .25s ease, transform .25s ease;
+}
+#toast.toast-show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+#toast .t-bar {
+  height: 4px;
+  width: 100%;
+  animation: toast-drain linear forwards;
+}
+#toast .t-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+}
+#toast .t-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+#toast .t-text { flex: 1; }
+#toast .t-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+  opacity: .75;
+}
+#toast .t-msg {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+#toast .t-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  opacity: .5;
+  padding: 0 0 0 4px;
+  color: inherit;
+  line-height: 1;
+  align-self: flex-start;
+  margin-top: 1px;
+}
+#toast .t-close:hover { opacity: 1; }
+@keyframes toast-drain {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+</style>
+
+<div id="toast">
+  <div class="t-bar" id="toast-bar"></div>
+  <div class="t-body">
+    <div class="t-icon" id="toast-icon"></div>
+    <div class="t-text">
+      <div class="t-title" id="toast-title"></div>
+      <div class="t-msg"   id="toast-msg"></div>
+    </div>
+    <button class="t-close" onclick="closeToast()">✕</button>
+  </div>
+</div>
+
+<div class="topbar">
+  <div class="tb-left"><h2>Network Threat Monitoring</h2><p>Port scan detection, SYN flood, traffic analysis — live from MySQL</p></div>
+  <div class="tb-right">
+    <div class="chip on" id="net-chip">● eth0 Active</div>
+    <button class="btn btn-r" onclick="stopNet()">&#9632; Stop IDS</button>
+    <button class="btn btn-p" onclick="startNet()">&#9654; Start IDS</button>
+  </div>
+</div>
+
+<div class="content">
+  <div class="sgrid sg4">
+    <div class="scard bl"><span class="sicon">&#9670;</span>
+      <div class="slabel">Total Detections</div><div class="sval bl" id="net-total">{{ net_stats.connections }}</div>
+      <div class="ssub">network_logs table</div></div>
+    <div class="scard re"><span class="sicon">&#8855;</span>
+      <div class="slabel">Blocked IPs</div><div class="sval re" id="net-blocked">{{ net_stats.blocked_ips }}</div>
+      <div class="ssub">blocked_ips table</div></div>
+    <div class="scard or"><span class="sicon">&#9888;</span>
+      <div class="slabel">Port Scan Alerts</div><div class="sval or" id="net-portscans">{{ net_stats.port_scans }}</div>
+      <div class="ssub">"Port Scan" events</div></div>
+    <div class="scard pu"><span class="sicon">&#8776;</span>
+      <div class="slabel">SYN Flood Events</div><div class="sval pu" id="net-synfloods">{{ net_stats.syn_floods }}</div>
+      <div class="ssub">"SYN Flood" events</div></div>
+  </div>
+
+  <div class="sgrid sg3" style="margin-bottom:16px">
+    <div class="scard re">
+      <div class="slabel">Port Scan Detection</div>
+      <div class="sval re" style="font-size:22px">{% if net_stats.port_scans > 0 %}ACTIVE{% else %}CLEAR{% endif %}</div>
+      <div class="ssub" style="margin-top:8px">{{ net_stats.port_scans }} scan events detected</div>
+      <div style="margin-top:8px">{% if net_stats.port_scans > 0 %}<span class="b b-r">HIGH RISK</span>{% else %}<span class="b b-g">NO THREAT</span>{% endif %}</div>
+    </div>
+    <div class="scard or">
+      <div class="slabel">SYN Flood Detection</div>
+      <div class="sval or" style="font-size:22px">{% if net_stats.syn_floods > 0 %}WARNING{% else %}CLEAR{% endif %}</div>
+      <div class="ssub" style="margin-top:8px">{{ net_stats.syn_floods }} flood events detected</div>
+      <div style="margin-top:8px">{% if net_stats.syn_floods > 0 %}<span class="b b-o">MEDIUM RISK</span>{% else %}<span class="b b-g">NO THREAT</span>{% endif %}</div>
+    </div>
+    <div class="scard pu">
+      <div class="slabel">Blocked IPs (IPS)</div>
+      <div class="sval pu" style="font-size:34px" id="blocked-ips-count">{{ net_stats.blocked_ips }}</div>
+      <div class="ssub" style="margin-top:8px">Auto-blocked by IDS engine</div>
+      <div style="margin-top:8px"><span class="b b-p">MONITORING</span></div>
+    </div>
+  </div>
+
+  <div class="gc">
+    <div class="gc-head"><span class="gc-title">Network Traffic — Last 12 Hours (KB/s)</span><span class="chip on">● Live</span></div>
+    <div class="gc-body"><div class="cw"><canvas id="n_traffic"></canvas></div></div>
+  </div>
+
+  <div class="g2">
+    <div class="gc">
+      <div class="gc-head"><span class="gc-title">Protocol Distribution</span></div>
+      <div class="gc-body"><div class="cws"><canvas id="n_proto"></canvas></div></div>
+    </div>
+    <div class="gc">
+      <div class="gc-head"><span class="gc-title">Threat Type Breakdown</span></div>
+      <div class="gc-body">
+        <div class="pr"><div class="pr-top"><span>Port Scan</span><span id="pr-ps">{{ net_stats.port_scans }} events</span></div>
+          <div class="pr-bar"><div class="pr-fill" id="bar-portscan" style="background:var(--red)"></div></div></div>
+        <div class="pr"><div class="pr-top"><span>SYN Flood</span><span id="pr-sf">{{ net_stats.syn_floods }} events</span></div>
+          <div class="pr-bar"><div class="pr-fill" id="bar-synflood" style="background:var(--orange)"></div></div></div>
+        <div class="pr"><div class="pr-top"><span>Blocked IPs</span><span id="pr-bl">{{ net_stats.blocked_ips }} total</span></div>
+          <div class="pr-bar"><div class="pr-fill" id="bar-blocked" style="background:var(--purple)"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <script id="net-data" type="application/json">
+  {
+    "port_scans":  {{ net_stats.port_scans }},
+    "syn_floods":  {{ net_stats.syn_floods }},
+    "blocked_ips": {{ net_stats.blocked_ips }},
+    "connections": {{ net_stats.connections }},
+    "log_count":   {{ net_logs|length }},
+    "blocked_count": {{ blocked_ips|length }}
+  }
+  </script>
+
+  <div class="gc">
+    <div class="gc-head">
+      <span class="gc-title">Recent Attack Log — network_logs (MySQL)</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="b b-r" id="attack-count">{{ net_logs|length }} shown</span>
+        <button class="btn btn-g" style="padding:5px 12px;font-size:11px" onclick="refreshNetLogs()">Refresh</button>
+      </div>
+    </div>
+    <div class="gc-body np">
+      <table class="dt">
+        <thead><tr><th>Timestamp</th><th>Attacker IP</th><th>Destination IP</th><th>Attack Type</th></tr></thead>
+        <tbody id="attack-tbody">
+          {% for log in net_logs %}
+          <tr>
+            <td style="color:var(--dim);font-size:11px;white-space:nowrap">{{ log.time }}</td>
+            <td style="font-family:monospace;font-size:11px;color:var(--red)">{{ log.attacker }}</td>
+            <td style="font-family:monospace;font-size:11px">{{ log.destination }}</td>
+            <td>
+              {% if log.type=='Port Scan' %}<span class="b b-r">Port Scan</span>
+              {% elif log.type=='SYN Flood' %}<span class="b b-o">SYN Flood</span>
+              {% else %}<span class="b b-p">{{ log.type }}</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" style="color:var(--dim);text-align:center;padding:24px">No attack logs yet — start the IDS engine</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="gc">
+    <div class="gc-head">
+      <span class="gc-title">Auto-Blocked IPs — blocked_ips (MySQL)</span>
+      <span class="b b-r" id="blocked-badge">{{ blocked_ips|length }} blocked</span>
+    </div>
+    <div class="gc-body np">
+      <table class="dt">
+        <thead><tr><th>IP Address</th><th>Blocked At</th><th>Status</th></tr></thead>
+        <tbody id="blocked-tbody">
+          {% for ip in blocked_ips %}
+          <tr>
+            <td style="font-family:monospace;font-size:12px;color:var(--red)">{{ ip.ip }}</td>
+            <td style="color:var(--dim);font-size:11px">{{ ip.time }}</td>
+            <td><span class="b b-r">BLOCKED</span></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" style="color:var(--dim);text-align:center;padding:24px">No blocked IPs yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var _netData        = JSON.parse(document.getElementById('net-data').textContent);
+var _lastNetCount   = _netData.log_count;
+var _lastBlockedCount = _netData.blocked_count;
+
+(function(){
+  var ps=_netData.port_scans, sf=_netData.syn_floods, bl=_netData.blocked_ips;
+  var max=Math.max(ps,sf,bl,1);
+  document.getElementById('bar-portscan').style.width=Math.round(ps/max*100)+'%';
+  document.getElementById('bar-synflood').style.width=Math.round(sf/max*100)+'%';
+  document.getElementById('bar-blocked').style.width =Math.round(bl/max*100)+'%';
+
+  var nc=document.getElementById('n_traffic').getContext('2d');
+  new Chart(nc,{type:'line',data:{labels:['00','01','02','03','04','05','06','07','08','09','10','11'],datasets:[
+    {label:'Inbound KB/s', data:[120,80,40,60,200,350,420,380,290,310,260,150],borderColor:BL,borderWidth:2,fill:true,backgroundColor:grad(nc,BL),tension:.4,pointRadius:2},
+    {label:'Outbound KB/s',data:[80,60,30,45,160,280,300,260,200,230,180,110], borderColor:GR,borderWidth:2,fill:true,backgroundColor:grad(nc,GR),tension:.4,pointRadius:2},
+    {label:'Blocked',      data:[0,0,0,2,5,8,3,4,2,1,0,0],borderColor:RE,borderWidth:2,fill:false,tension:.4,pointRadius:3}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:legOpts},scales:scaleOpts}});
+
+  new Chart(document.getElementById('n_proto'),{type:'doughnut',data:{labels:['TCP','UDP','ICMP','HTTP','DNS','Other'],
+    datasets:[{data:[42,18,5,22,8,5],backgroundColor:[BL+'cc',PU+'cc',OR+'cc',GR+'cc',RE+'cc',PK+'cc'],borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'bottom',labels:{boxWidth:9,padding:10,color:'#94a3b8'}}}}});
+})();
+
+// ── Toast ─────────────────────────────────────────────────────
+var _toastTimer = null;
+
+var _toastTypes = {
+  network: { bg:'rgba(248,113,113,.12)', border:'rgba(248,113,113,.45)', bar:'#f87171', iconBg:'rgba(248,113,113,.2)', icon:'⊘', title:'Attack Blocked',  color:'#f87171' },
+  info:    { bg:'rgba(79,195,247,.12)',  border:'rgba(79,195,247,.45)',  bar:'#4fc3f7', iconBg:'rgba(79,195,247,.2)',  icon:'i', title:'Info',            color:'#4fc3f7' }
+};
+
+function closeToast() {
+  var t = document.getElementById('toast');
+  t.classList.remove('toast-show');
+  clearTimeout(_toastTimer);
+  setTimeout(function(){ t.style.display='none'; }, 260);
+}
+
+function showToast(msg, type) {
+  var cfg = _toastTypes[type] || _toastTypes.info;
+  var t   = document.getElementById('toast');
+  var bar = document.getElementById('toast-bar');
+
+  t.style.background  = cfg.bg;
+  t.style.borderColor = cfg.border;
+  t.style.color       = cfg.color;
+
+  bar.style.background = cfg.bar;
+  bar.style.animation = 'none';
+  bar.offsetHeight;
+  bar.style.animation = 'toast-drain 5s linear forwards';
+
+  document.getElementById('toast-icon').textContent  = cfg.icon;
+  document.getElementById('toast-icon').style.background = cfg.iconBg;
+  document.getElementById('toast-icon').style.color  = cfg.color;
+  document.getElementById('toast-title').textContent = cfg.title;
+  document.getElementById('toast-msg').textContent   = msg;
+
+  t.style.display = 'block';
+  t.offsetHeight;
+  t.classList.add('toast-show');
+
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(closeToast, 5000);
+}
+
+// ── Start / Stop IDS ──────────────────────────────────────────
+function startNet() {
+  fetch('/api/network/start',{method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){ showToast(d.message,'info'); document.getElementById('net-chip').textContent='● IDS Running'; });
+}
+function stopNet() {
+  fetch('/api/network/stop',{method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){ showToast(d.message,'info'); document.getElementById('net-chip').textContent='○ IDS Stopped'; });
+}
+
+// ── Refresh attack log ────────────────────────────────────────
+function refreshNetLogs() {
+  fetch('/api/network/logs')
+    .then(function(r){return r.json();})
+    .then(function(data){
+      var logs=data.logs||[];
+      if (logs.length>_lastNetCount) {
+        logs.slice(0,logs.length-_lastNetCount).forEach(function(log){
+          showToast('Network Attack Blocked! IP: '+log.attacker+' — '+log.type,'network');
+        });
+        _lastNetCount=logs.length;
+      }
+      document.getElementById('attack-count').textContent=logs.length+' shown';
+      var tbody=document.getElementById('attack-tbody');
+      if (logs.length===0){ tbody.innerHTML='<tr><td colspan="4" style="color:var(--dim);text-align:center;padding:24px">No attack logs yet</td></tr>'; return; }
+      tbody.innerHTML='';
+      logs.forEach(function(log){
+        var badge=log.type==='Port Scan'?'<span class="b b-r">Port Scan</span>':log.type==='SYN Flood'?'<span class="b b-o">SYN Flood</span>':'<span class="b b-p">'+log.type+'</span>';
+        tbody.innerHTML+='<tr>'
+          +'<td style="color:var(--dim);font-size:11px;white-space:nowrap">'+log.time+'</td>'
+          +'<td style="font-family:monospace;font-size:11px;color:var(--red)">'+log.attacker+'</td>'
+          +'<td style="font-family:monospace;font-size:11px">'+log.destination+'</td>'
+          +'<td>'+badge+'</td></tr>';
+      });
+    }).catch(function(){});
+}
+
+// ── Refresh stats + blocked IPs ───────────────────────────────
+function refreshNetStats() {
+  fetch('/api/network/stats')
+    .then(function(r){return r.json();})
+    .then(function(d){
+      document.getElementById('net-total').textContent    =d.connections;
+      document.getElementById('net-blocked').textContent  =d.blocked_ips;
+      document.getElementById('net-portscans').textContent=d.port_scans;
+      document.getElementById('net-synfloods').textContent=d.syn_floods;
+      document.getElementById('blocked-ips-count').textContent=d.blocked_ips;
+      document.getElementById('pr-ps').textContent=d.port_scans+' events';
+      document.getElementById('pr-sf').textContent=d.syn_floods+' events';
+      document.getElementById('pr-bl').textContent=d.blocked_ips+' total';
+      var max=Math.max(d.port_scans,d.syn_floods,d.blocked_ips,1);
+      document.getElementById('bar-portscan').style.width=Math.round(d.port_scans/max*100)+'%';
+      document.getElementById('bar-synflood').style.width=Math.round(d.syn_floods/max*100)+'%';
+      document.getElementById('bar-blocked').style.width =Math.round(d.blocked_ips/max*100)+'%';
+    }).catch(function(){});
+
+  fetch('/api/network/blocked')
+    .then(function(r){return r.json();})
+    .then(function(data){
+      var ips=data.blocked_ips||[];
+      if (ips.length>_lastBlockedCount) {
+        ips.slice(0,ips.length-_lastBlockedCount).forEach(function(b){
+          showToast('Network Attack Blocked! IP: '+b.ip+' — Firewall rule applied','network');
+        });
+        _lastBlockedCount=ips.length;
+      }
+      document.getElementById('blocked-badge').textContent=ips.length+' blocked';
+      var tbody=document.getElementById('blocked-tbody');
+      if (ips.length===0){ tbody.innerHTML='<tr><td colspan="3" style="color:var(--dim);text-align:center;padding:24px">No blocked IPs yet</td></tr>'; return; }
+      tbody.innerHTML='';
+      ips.forEach(function(ip){
+        tbody.innerHTML+='<tr>'
+          +'<td style="font-family:monospace;font-size:12px;color:var(--red)">'+ip.ip+'</td>'
+          +'<td style="color:var(--dim);font-size:11px">'+ip.time+'</td>'
+          +'<td><span class="b b-r">BLOCKED</span></td></tr>';
+      });
+    }).catch(function(){});
+}
+
+setInterval(refreshNetLogs,  5000);
+setInterval(refreshNetStats, 5000);
+</script>
+{% endblock %}

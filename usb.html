@@ -1,0 +1,481 @@
+{% extends "base.html" %}
+{% block title %}USB Monitoring{% endblock %}
+
+{% block content %}
+
+<style>
+#toast {
+  display: none;
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-12px);
+  z-index: 9999;
+  min-width: 420px;
+  max-width: 560px;
+  border-radius: 12px;
+  border: 1px solid;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6);
+  backdrop-filter: blur(16px);
+  opacity: 0;
+  transition: opacity .25s ease, transform .25s ease;
+  font-family: 'Courier New', monospace;
+}
+#toast.toast-show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+#toast .t-bar { height: 4px; width: 100%; }
+#toast .t-bar.drain { animation: toast-drain 4s linear forwards; }
+@keyframes toast-drain { from { width:100%; } to { width:0%; } }
+#toast .t-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 18px 17px;
+}
+#toast .t-icon {
+  width: 38px; height: 38px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; font-weight: 900; flex-shrink: 0; border: 1px solid;
+}
+#toast .t-text { flex: 1; }
+#toast .t-title {
+  font-size: 10px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; margin-bottom: 4px; opacity: .65;
+}
+#toast .t-msg { font-size: 13px; font-weight: 600; line-height: 1.45; }
+#toast .t-close {
+  background: none; border: none; cursor: pointer; font-size: 15px;
+  opacity: .35; color: inherit; padding: 4px; line-height: 1;
+  align-self: flex-start; transition: opacity .15s;
+}
+#toast .t-close:hover { opacity: 1; }
+</style>
+
+<div id="toast">
+  <div class="t-bar" id="toast-bar"></div>
+  <div class="t-body">
+    <div class="t-icon" id="toast-icon"></div>
+    <div class="t-text">
+      <div class="t-title" id="toast-title"></div>
+      <div class="t-msg"   id="toast-msg"></div>
+    </div>
+    <button class="t-close" onclick="closeToast()">&#10005;</button>
+  </div>
+</div>
+
+<div class="topbar">
+  <div class="tb-left"><h2>USB Device Monitoring</h2><p>All USB events, intrusion log and event timeline from CSV</p></div>
+  <div class="tb-right">
+    <div class="chip {% if usb_status == 'ACTIVE' %}on{% endif %}" id="usb-chip">
+      {% if usb_status == 'ACTIVE' %}● Monitor Active{% else %}○ Monitor Stopped{% endif %}
+    </div>
+    <button class="btn btn-r" onclick="stopMonitor()">&#9632; Stop Monitor</button>
+    <button class="btn btn-p" onclick="startMonitor()">&#9654; Start Monitor</button>
+  </div>
+</div>
+
+<div class="content">
+  <div class="sgrid sg4">
+    <div class="scard gr">
+      <div class="slabel">Monitor Status</div>
+      <div class="sval gr" style="font-size:22px;letter-spacing:.04em" id="usb-status-val">{{ usb_status }}</div>
+      <div class="ssub">USBSecurityManager</div>
+    </div>
+    <div class="scard bl">
+      <div class="slabel">Total USB Events</div>
+      <div class="sval bl" id="usb-total">{{ stats.total }}</div>
+      <div class="ssub">From intrusion_log.csv</div>
+    </div>
+    <div class="scard re">
+      <div class="slabel">Blocked Drives</div>
+      <div class="sval re" id="usb-blocked-drives">{{ blocked_drives|length }}</div>
+      <div class="ssub">Drives blocked this session</div>
+    </div>
+    <div class="scard or">
+      <div class="slabel">Connected Devices</div>
+      <div class="sval or" id="usb-connected">{{ connected_devices|length }}</div>
+      <div class="ssub">Currently plugged in</div>
+    </div>
+  </div>
+
+  <!-- Connected devices table with size + speed columns -->
+  <div class="gc">
+    <div class="gc-head">
+      <span class="gc-title">Connected USB Devices</span>
+      <span class="chip on" id="device-chip">{{ connected_devices|length }} device(s)</span>
+    </div>
+    <div class="gc-body np">
+      <table class="dt">
+        <thead>
+          <tr>
+            <th>Device</th><th>Mount Point</th><th>Filesystem</th>
+            <th>Size</th><th>Used</th>
+            <th>Read Speed</th><th>Write Speed</th>
+            <th>Options</th><th>Block State</th>
+          </tr>
+        </thead>
+        <tbody id="device-tbody">
+          {% if connected_devices %}
+            {% for dev in connected_devices %}
+            <tr>
+              <td style="font-family:monospace;font-size:11px">{{ dev.device }}</td>
+              <td style="font-family:monospace;font-size:12px;color:var(--blue)">{{ dev.mountpoint }}</td>
+              <td><span class="b b-d">{{ dev.fstype }}</span></td>
+              <td style="font-size:11px;color:var(--dim)">{{ dev.size or '—' }}</td>
+              <td style="font-size:11px;color:var(--dim)">{{ dev.used or '—' }}</td>
+              <td style="font-size:11px;color:var(--green)">{{ dev.read_speed or '—' }}</td>
+              <td style="font-size:11px;color:var(--orange)">{{ dev.write_speed or '—' }}</td>
+              <td style="font-size:11px;color:var(--dim)">{{ dev.options }}</td>
+              <td>{% if dev.is_blocked %}<span class="b b-r">BLOCKED</span>{% else %}<span class="b b-g">OPEN</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+          <tr><td colspan="9" style="color:var(--dim);text-align:center;padding:20px">No USB devices currently connected</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if blocked_drives %}
+  <div class="gc">
+    <div class="gc-head"><span class="gc-title">Blocked Drives — This Session</span><span class="b b-r">{{ blocked_drives|length }} blocked</span></div>
+    <div class="gc-body np">
+      <table class="dt">
+        <thead><tr><th>Drive</th><th>Status</th><th>Reason</th></tr></thead>
+        <tbody>
+          {% for drive in blocked_drives %}
+          <tr>
+            <td style="font-family:monospace;font-size:12px;color:var(--red)">{{ drive }}</td>
+            <td><span class="b b-r">BLOCKED</span></td>
+            <td style="font-size:11.5px;color:var(--dim)">Auto-blocked by IDS engine</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <script id="usb-data" type="application/json">
+  {
+    "labels":     {{ chart7.labels  | tojson }},
+    "allowed":    {{ chart7.allowed | tojson }},
+    "blocked":    {{ chart7.blocked | tojson }},
+    "log_count":  {{ logs|length }}
+  }
+  </script>
+
+  <!-- Event timeline — recent 15 logs -->
+  <div class="gc">
+    <div class="gc-head">
+      <span class="gc-title">USB Event Timeline — Recent 15 Events</span>
+      <span class="chip on">CSV Data</span>
+    </div>
+    <div class="gc-body"><div class="cw"><canvas id="u_timeline"></canvas></div></div>
+  </div>
+
+  <div class="gc">
+    <div class="gc-head">
+      <span class="gc-title">USB Intrusion Log — intrusion_log.csv</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="b b-b" id="log-count">{{ logs|length }} entries</span>
+        <a href="{{ url_for('api_logs') }}" target="_blank">
+          <button class="btn btn-g" style="padding:5px 12px;font-size:11px">Export JSON</button>
+        </a>
+      </div>
+    </div>
+    <div class="gc-body np">
+      <table class="dt">
+        <thead><tr><th>#</th><th>Timestamp</th><th>Event Type</th><th>Drive</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody id="log-tbody">
+          {% for row in logs %}
+          <tr>
+            <td style="color:var(--dim);font-size:10px">{{ loop.index }}</td>
+            <td style="color:var(--dim);font-size:11px;white-space:nowrap">{{ row.Timestamp }}</td>
+            <td><span class="b b-b">{{ row['Event Type'] }}</span></td>
+            <td style="font-family:monospace;font-size:11px">{{ row.Drive }}</td>
+            <td>
+              {% set s = row.Status %}
+              {% if s=='ACTIVE' %}<span class="b b-g">ACTIVE</span>
+              {% elif s=='BLOCKED' %}<span class="b b-r">BLOCKED</span>
+              {% elif s=='STOPPED' %}<span class="b b-d">STOPPED</span>
+              {% elif s=='SAFE' %}<span class="b b-g">SAFE</span>
+              {% elif s=='DETECTED' %}<span class="b b-b">DETECTED</span>
+              {% elif s=='MALICIOUS' %}<span class="b b-r">MALICIOUS</span>
+              {% else %}<span class="b b-o">{{ s }}</span>{% endif %}
+            </td>
+            <td style="font-size:11.5px">{{ row.Details }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="color:var(--dim);text-align:center;padding:24px">No log entries found</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="gc">
+    <div class="gc-head"><span class="gc-title">Intrusion Message Feed</span></div>
+    <div class="gc-body" id="msg-feed">
+      {% for row in logs[:8] %}
+      <div class="af">
+        {% set s = row.Status %}
+        {% if s in ['BLOCKED','MALICIOUS'] %}<div class="af-dot r"></div>
+        {% elif s in ['ACTIVE','SAFE','DETECTED'] %}<div class="af-dot g"></div>
+        {% elif s == 'STOPPED' %}<div class="af-dot b"></div>
+        {% else %}<div class="af-dot o"></div>{% endif %}
+        <div>
+          <div class="af-msg">
+            {% if s in ['BLOCKED','MALICIOUS'] %}<strong style="color:var(--red)">{{ row['Event Type'] }}:</strong>
+            {% elif s in ['ACTIVE','SAFE','DETECTED'] %}<strong style="color:var(--green)">{{ row['Event Type'] }}:</strong>
+            {% else %}<strong style="color:var(--blue)">{{ row['Event Type'] }}:</strong>{% endif %}
+            {{ row.Details }} — Drive: {{ row.Drive }}
+          </div>
+          <div class="af-time">{{ row.Timestamp }} · USB Module</div>
+        </div>
+      </div>
+      {% else %}
+      <p style="color:var(--dim);font-size:12px">No messages yet — start the USB monitor.</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var _usbData   = JSON.parse(document.getElementById('usb-data').textContent);
+var _lastCount = _usbData.log_count;
+
+// track known device keys to detect newly plugged devices
+var _knownDevices    = [];
+var _devicePopupFired = {};  // dedup — prevents both poll paths firing same popup
+
+// ── Toast config ──────────────────────────────────────────────
+var _toastTimer = null;
+var _toastCfg = {
+  safe:    { bg:'rgba(10,28,20,.95)',  border:'rgba(52,211,153,.5)',   bar:'#34d399', ibg:'rgba(52,211,153,.15)',  icolor:'#34d399', iborder:'rgba(52,211,153,.4)',  icon:'&#10003;', title:'Drive Safe',      color:'#34d399' },
+  block:   { bg:'rgba(28,10,10,.95)', border:'rgba(248,113,113,.55)', bar:'#f87171', ibg:'rgba(248,113,113,.18)', icolor:'#f87171', iborder:'rgba(248,113,113,.5)', icon:'&#8856;',  title:'Drive Blocked',   color:'#f87171' },
+  warning: { bg:'rgba(28,10,10,.95)', border:'rgba(248,113,113,.55)', bar:'#f87171', ibg:'rgba(248,113,113,.18)', icolor:'#f87171', iborder:'rgba(248,113,113,.5)', icon:'!',        title:'Threat Detected', color:'#f87171' },
+  info:    { bg:'rgba(15,28,45,.95)', border:'rgba(79,195,247,.5)',   bar:'#4fc3f7', ibg:'rgba(79,195,247,.15)',  icolor:'#4fc3f7', iborder:'rgba(79,195,247,.4)',  icon:'i',        title:'Info',            color:'#4fc3f7' }
+};
+
+function closeToast() {
+  var t = document.getElementById('toast');
+  t.classList.remove('toast-show');
+  clearTimeout(_toastTimer);
+  setTimeout(function(){ t.style.display='none'; }, 260);
+}
+
+function showToast(msg, type) {
+  var c = _toastCfg[type] || _toastCfg.info;
+  var t   = document.getElementById('toast');
+  var bar = document.getElementById('toast-bar');
+  t.style.background  = c.bg;
+  t.style.borderColor = c.border;
+  t.style.color       = c.color;
+  t.style.boxShadow   = '0 0 32px ' + c.border;
+  bar.style.background = c.bar;
+  bar.className = 't-bar';
+  bar.offsetHeight;
+  bar.className = 't-bar drain';
+  var icon = document.getElementById('toast-icon');
+  icon.innerHTML         = c.icon;
+  icon.style.background  = c.ibg;
+  icon.style.color       = c.icolor;
+  icon.style.borderColor = c.iborder;
+  document.getElementById('toast-title').textContent = c.title;
+  document.getElementById('toast-msg').textContent   = msg;
+  t.style.display = 'block';
+  t.offsetHeight;
+  t.classList.add('toast-show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(closeToast, 4000);
+}
+
+// ── Device connect popup — deduped across both poll paths ─────
+function fireDevicePopup(dev) {
+  var key = dev.device || dev.mountpoint || '';
+  if (!key || _devicePopupFired[key]) return;
+  _devicePopupFired[key] = true;
+  setTimeout(function(){ delete _devicePopupFired[key]; }, 10000);
+  var label = dev.device || dev.mountpoint;
+  if (dev.size) label += ' (' + dev.size + ')';
+  if (dev.is_blocked) {
+    showToast('Drive ' + label + ' connected — BLOCKED by IDS engine.', 'block');
+  } else {
+    showToast('Drive ' + label + ' connected — drive is SAFE.', 'safe');
+  }
+}
+
+// ── Start / Stop ──────────────────────────────────────────────
+function startMonitor() {
+  fetch('/api/start_monitor',{method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      showToast(d.message,'info');
+      document.getElementById('usb-chip').textContent='● Monitor Active';
+      document.getElementById('usb-chip').classList.add('on');
+      document.getElementById('usb-status-val').textContent='ACTIVE';
+    });
+}
+function stopMonitor() {
+  fetch('/api/stop_monitor',{method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      showToast(d.message,'info');
+      document.getElementById('usb-chip').textContent='○ Monitor Stopped';
+      document.getElementById('usb-chip').classList.remove('on');
+      document.getElementById('usb-status-val').textContent='STOPPED';
+    });
+}
+
+// ── Badge helper ──────────────────────────────────────────────
+var _bMap = {
+  ACTIVE:'<span class="b b-g">ACTIVE</span>', BLOCKED:'<span class="b b-r">BLOCKED</span>',
+  STOPPED:'<span class="b b-d">STOPPED</span>', SAFE:'<span class="b b-g">SAFE</span>',
+  DETECTED:'<span class="b b-b">DETECTED</span>', MALICIOUS:'<span class="b b-r">MALICIOUS</span>'
+};
+function mkBadge(s){ return _bMap[s]||'<span class="b b-o">'+s+'</span>'; }
+
+// ── Timeline chart — stored ref so we can update it live ──────
+var _chart = null;
+(function(){
+  var labels  = _usbData.labels.slice(-15);
+  var allowed = _usbData.allowed.slice(-15);
+  var blocked = _usbData.blocked.slice(-15);
+  _chart = new Chart(document.getElementById('u_timeline'), {
+    type: 'bar',
+    data: { labels: labels, datasets: [
+      { label:'Active',  data:allowed, backgroundColor:GR+'77', borderColor:GR, borderWidth:1, borderRadius:4 },
+      { label:'Blocked', data:blocked, backgroundColor:RE+'77', borderColor:RE, borderWidth:1, borderRadius:4 }
+    ]},
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:legOpts}, scales:scaleOpts }
+  });
+})();
+
+function refreshTimeline(logs) {
+  if (!_chart) return;
+  var recent  = logs.slice(-15);
+  var labels  = recent.map(function(r){ return (r.Timestamp||'').slice(11,16)||('ev'+(logs.indexOf(r)+1)); });
+  var allowed = recent.map(function(r){ return (r.Status||'').toUpperCase()==='BLOCKED'?0:1; });
+  var blocked = recent.map(function(r){ return (r.Status||'').toUpperCase()==='BLOCKED'?1:0; });
+  _chart.data.labels = labels;
+  _chart.data.datasets[0].data = allowed;
+  _chart.data.datasets[1].data = blocked;
+  _chart.update('none');
+}
+
+// ── Poll logs every 3s ────────────────────────────────────────
+function pollLogs() {
+  fetch('/api/logs')
+    .then(function(r){return r.json();})
+    .then(function(logs){
+      if (logs.length !== _lastCount) {
+        var newEntries = logs.slice(0, logs.length - _lastCount);
+        _lastCount = logs.length;
+        newEntries.forEach(function(row){
+          var s=(row.Status||'').toUpperCase(), d=row.Drive||'';
+          // PATH 1: device popup from log events
+          if (s==='DETECTED') {
+            fireDevicePopup({ device:d, mountpoint:d, is_blocked:false, size:null });
+          } else if (s==='BLOCKED') {
+            fireDevicePopup({ device:d, mountpoint:d, is_blocked:true, size:null });
+          } else if (s==='MALICIOUS') {
+            showToast('Malicious file detected on '+d+'. Drive will be blocked.','warning');
+          } else if (s==='SAFE') {
+            showToast('USB drive scan complete — '+d+' is safe.','safe');
+          } else if (s==='ACTIVE') {
+            showToast('USB monitoring started','info');
+          }
+        });
+        document.getElementById('usb-total').textContent = logs.length;
+        document.getElementById('log-count').textContent = logs.length+' entries';
+        // rebuild log table
+        var tbody = document.getElementById('log-tbody');
+        tbody.innerHTML='';
+        logs.forEach(function(row,i){
+          var s=(row.Status||'').toUpperCase();
+          tbody.innerHTML+='<tr>'
+            +'<td style="color:var(--dim);font-size:10px">'+(i+1)+'</td>'
+            +'<td style="color:var(--dim);font-size:11px;white-space:nowrap">'+(row.Timestamp||'')+'</td>'
+            +'<td><span class="b b-b">'+(row['Event Type']||'')+'</span></td>'
+            +'<td style="font-family:monospace;font-size:11px">'+(row.Drive||'')+'</td>'
+            +'<td>'+mkBadge(s)+'</td>'
+            +'<td style="font-size:11.5px">'+(row.Details||'')+'</td></tr>';
+        });
+        // rebuild feed
+        var feed=document.getElementById('msg-feed');
+        feed.innerHTML='';
+        logs.slice(0,8).forEach(function(row){
+          var s=(row.Status||'').toUpperCase();
+          var dc=(['BLOCKED','MALICIOUS'].indexOf(s)>-1)?'r':(['ACTIVE','SAFE','DETECTED'].indexOf(s)>-1)?'g':(s==='STOPPED'?'b':'o');
+          var color=(['BLOCKED','MALICIOUS'].indexOf(s)>-1)?'var(--red)':(['ACTIVE','SAFE','DETECTED'].indexOf(s)>-1)?'var(--green)':'var(--blue)';
+          feed.innerHTML+='<div class="af"><div class="af-dot '+dc+'"></div><div>'
+            +'<div class="af-msg"><strong style="color:'+color+'">'+(row['Event Type']||'')+': </strong>'+(row.Details||'')+' — Drive: '+(row.Drive||'')+'</div>'
+            +'<div class="af-time">'+(row.Timestamp||'')+' · USB Module</div></div></div>';
+        });
+        // update timeline with recent 15
+        refreshTimeline(logs);
+      }
+    }).catch(function(){});
+}
+
+// ── Poll device status every 5s ───────────────────────────────
+function pollDevices() {
+  fetch('/api/usb/status')
+    .then(function(r){return r.json();})
+    .then(function(d){
+      document.getElementById('usb-status-val').textContent=d.status;
+      if (d.status==='ACTIVE'){
+        document.getElementById('usb-chip').classList.add('on');
+        document.getElementById('usb-chip').textContent='● Monitor Active';
+      } else {
+        document.getElementById('usb-chip').classList.remove('on');
+        document.getElementById('usb-chip').textContent='○ Monitor Stopped';
+      }
+      var devs=d.connected_devices||[];
+      document.getElementById('usb-connected').textContent=devs.length;
+      document.getElementById('device-chip').textContent=devs.length+' device(s)';
+      document.getElementById('usb-blocked-drives').textContent=(d.blocked_drives||[]).length;
+
+      // PATH 2: popup from pollDevices — detect any newly appeared device
+      var currentKeys = devs.map(function(dv){ return dv.device||dv.mountpoint||''; });
+      devs.forEach(function(dv){
+        var key = dv.device||dv.mountpoint||'';
+        if (key && _knownDevices.indexOf(key) === -1) {
+          fireDevicePopup(dv);
+        }
+      });
+      _knownDevices = currentKeys;
+
+      // rebuild table with size + speed columns
+      var tbody=document.getElementById('device-tbody');
+      if (devs.length===0){
+        tbody.innerHTML='<tr><td colspan="9" style="color:var(--dim);text-align:center;padding:20px">No USB devices currently connected</td></tr>';
+        return;
+      }
+      tbody.innerHTML='';
+      devs.forEach(function(dev){
+        tbody.innerHTML+='<tr>'
+          +'<td style="font-family:monospace;font-size:11px">'+(dev.device||'')+'</td>'
+          +'<td style="font-family:monospace;font-size:12px;color:var(--blue)">'+(dev.mountpoint||'')+'</td>'
+          +'<td><span class="b b-d">'+(dev.fstype||'')+'</span></td>'
+          +'<td style="font-size:11px;color:var(--dim)">'+(dev.size||'—')+'</td>'
+          +'<td style="font-size:11px;color:var(--dim)">'+(dev.used||'—')+'</td>'
+          +'<td style="font-size:11px;color:var(--green)">'+(dev.read_speed||'—')+'</td>'
+          +'<td style="font-size:11px;color:var(--orange)">'+(dev.write_speed||'—')+'</td>'
+          +'<td style="font-size:11px;color:var(--dim)">'+(dev.options||'')+'</td>'
+          +'<td>'+(dev.is_blocked?'<span class="b b-r">BLOCKED</span>':'<span class="b b-g">OPEN</span>')+'</td></tr>';
+      });
+    }).catch(function(){});
+}
+
+setInterval(pollLogs,    3000);
+setInterval(pollDevices, 5000);
+</script>
+{% endblock %}

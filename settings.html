@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div class="tb-left"><h2>System Settings</h2><p>Configure USB &amp; network security policies</p></div>
+  <div class="tb-right">
+    <button class="btn btn-g" onclick="resetToggles()">Reset Defaults</button>
+    <button class="btn btn-p" onclick="alert('Settings saved!')">Save Changes</button>
+  </div>
+</div>
+
+<div class="content">
+  <div class="g2">
+    <div class="gc">
+      <div class="gc-head"><span class="gc-title">USB Security Policy</span></div>
+      <div class="gc-body">
+        <div class="trow"><div class="ti"><h4>Auto-block Unknown Devices</h4><p>Block unrecognized USB devices automatically on connect</p></div><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="trow"><div class="ti"><h4>Malware Scanning (ClamAV)</h4><p>Scan all USB drives on mount using ClamAV signatures</p></div><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="trow"><div class="ti"><h4>Read-only for Unknown Devices</h4><p>Mount unverified devices in read-only mode</p></div><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="trow"><div class="ti"><h4>Email Alerts on Block</h4><p>Send email notification when a device is blocked</p></div><div class="tog" onclick="this.classList.toggle('on')"></div></div>
+        <div class="trow"><div class="ti"><h4>Log All USB Events</h4><p>Write all USB insert/remove events to intrusion_log.csv</p></div><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+      </div>
+    </div>
+    <div class="gc">
+      <div class="gc-head"><span class="gc-title">Network Security Policy</span></div>
+      <div class="gc-body">
+        <div class="trow"><div class="ti"><h4>Deep Packet Inspection</h4><p>Analyze packet payloads for threat signatures</p></div><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="trow"><div class="ti"><h4>Block Suspicious Ports</h4><p>Auto-block C2 ports: 4444, 1337, 31337</p></div><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="trow"><div class="ti"><h4>Port Scan Detection</h4><p>Alert on rapid sequential port connection attempts</p></div><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="trow"><div class="ti"><h4>SYN Flood Protection</h4><p>Rate-limit excessive half-open TCP connections</p></div><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="trow"><div class="ti"><h4>IDS/IPS Mode</h4><p>Active intrusion prevention — auto-block threats</p></div><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="gc">
+    <div class="gc-head"><span class="gc-title">Whitelisted USB Devices (VID:PID)</span><button class="btn btn-p" style="padding:5px 14px;font-size:11px">+ Add Device</button></div>
+    <div class="gc-body np">
+      <table class="dt">
+        <thead><tr><th>Vendor ID</th><th>Product ID</th><th>Description</th><th>Added By</th><th>Date Added</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>0781</code></td><td><code>5583</code></td><td>SanDisk Ultra USB 3.0 32GB</td><td>admin</td><td style="color:var(--dim);font-size:11.5px">2026-02-01</td><td><span class="b b-r" style="cursor:pointer">Remove</span></td></tr>
+          <tr><td><code>0951</code></td><td><code>1642</code></td><td>Kingston DataTraveler 100 G3</td><td>admin</td><td style="color:var(--dim);font-size:11.5px">2026-02-14</td><td><span class="b b-r" style="cursor:pointer">Remove</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="gc">
+    <div class="gc-head"><span class="gc-title">Log File Configuration</span></div>
+    <div class="gc-body">
+      <div class="trow">
+        <div class="ti"><h4>Log File Path</h4><p>Path to intrusion_log.csv used by all modules</p></div>
+        <code style="font-size:12px;color:var(--blue);background:var(--glass);padding:6px 12px;border-radius:6px;border:1px solid var(--border)">data/intrusion_log.csv</code>
+      </div>
+      <div class="trow">
+        <div class="ti"><h4>Auto-clear Logs Older Than</h4><p>Automatically purge entries older than this threshold</p></div>
+        <select style="background:var(--glass);border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px">
+          <option>30 days</option><option>60 days</option><option>90 days</option><option>Never</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function resetToggles(){ document.querySelectorAll('.tog').forEach(function(t){ t.classList.add('on'); }); }
+</script>
+{% endblock %}
